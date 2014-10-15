@@ -10,15 +10,16 @@
 
 ;;; request and response parsing
 
+;; Note: grammar items like <this> are omitted from the tree.
 (def parse-request (insta/parser
                     "
-start-line = junk method ws+ path [query] [header* [body]] junk
+start-line = <junk> method <ws>+ path [query] [header* [body]] <junk>
 
 method = 'GET' | 'PUT' | 'POST' | 'DELETE' | 'OPTIONS'
 
-path = segment+
+path = path-segment+
 
-<segment> = '/' (path-constant | variable)
+<path-segment> = '/' (path-constant | variable)
 
 path-constant = path-char*
 
@@ -34,56 +35,72 @@ path-constant = path-char*
 <sub-delims>    = '!' / '$' / '&' / '(' / ')'
                   / '*' / '+' / ',' / ';' / '='
 
-HEXDIG = #'[0-9A-Fa-f]'
+<HEXDIG> = #'[0-9A-Fa-f]'
 <ALPHA> = #'[A-Za-z]'
-DIGIT = #'[0-9]'
+<DIGIT> = #'[0-9]'
 
-query = ws* '?' (ws* query-segment)+
+query = <ws>* <question-mark> (<ws>* query-segment)+
 
-query-segment = query-key '=' query-value
-              | '&' query-segment
-              | '[' query-segment ']'
+query-segment = query-key <equal-sign> query-value
+              | <ampersand> query-segment
+              | <open-bracket> query-segment <close-bracket>
 query-key = (ALPHA | DIGIT | '-' | '_' | '.')+
 query-value = variable | query-value-constant
 query-value-constant = (ALPHA | DIGIT | '-' | '_' | '.')+
 
-header = '\n' (bracketed-header | unbracketed-header)
-bracketed-header = '[' unbracketed-header ']'
-unbracketed-header = header-key ':' ws* header-value
+header = <newline> (bracketed-header | unbracketed-header)
+header-core = header-key <colon> <ws>* header-value
+bracketed-header = <open-bracket> header-core <close-bracket>
+unbracketed-header = header-core
 
 header-key = (ALPHA | DIGIT | '-' | '_' | '.')+
-header-value = variable | #'[^\n\\]]+'
+header-value = variable | header-value-constant
+header-value-constant = #'[^\n\\]]+'
 
 body = #'\\n{2}.*$'
 
-variable = '{' #'[^{}]+' '}'
-         | '{' ws* '}'
+variable = <open-brace> #'[^{}]*' <close-brace>
 
-ws = #'\\s'
-junk = (ws | '\n')* 
+newline = '\\n'
+colon = ':'
+equal-sign = '='
+question-mark = '?'
+ampersand = '&'
+open-bracket = '['
+close-bracket = ']'
+open-brace = '{'
+close-brace = '}'
+
+<ws> = #'\\s'
+<junk> = (ws | '\n')* 
 "))
 
 (defn parse-request-transform [x]
   (->> (parse-request x)
        (insta/transform {:query-key str
-                         :path-constant str})))
+                         :path-constant str
+                         :header-key str
+                         :header-value identity
+                         })))
 
 ;; (pprint (parse-request "GET /users/{user}/item/{item}?pqr=0&q={q}&[r=2]"))
 
-;; (pprint
-;;  (parse-request
-;;   "
-;; GET /user/{user}/items/{item}
-;;     ?query-param={}
-;;     &[optional-query-param={}]
-;;     &constant-query-param=1
-;;     &[optional-constant-query-param=1]
-;; Header: {}
-;; Header-With-Alias: {alias}
-;; Header-With-Constant-Value: Constant Value
-;; [Optional-Header-With-Variable-Value: {}]
-;; [Optional-Header-With-Constant-Value: 10000]
-;; "))
+(pprint
+ (parse-request-transform
+  "
+GET /user/{user}/items/{item}
+    ?query-param={}
+    &[optional-query-param={}]
+    &constant-query-param=1
+    &query-param-with-alias={alias}
+    &[optional-constant-query-param=1]
+Header: {}
+Header-With-Alias: {alias}
+Header-With-Constant-Value: Constant Value
+[Optional-Header-With-Variable-Value: {}]
+[Optional-Header-With-Constant-Value: 10000]
+
+Entity"))
 
 ;;(pprint (parse-request "GET /\n[Header: {Value}]\n"))
 
