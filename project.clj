@@ -6,4 +6,5 @@
   :dependencies [[org.clojure/clojure "1.6.0"]
                  [markdown-clj "0.9.54"]
                  [clj-tagsoup "0.3.0" :exclusions [org.clojure/clojure]]
-                 [clj-http "1.0.0"]])
+                 [clj-http "1.0.0"]
+                 [instaparse "1.3.4"]])
