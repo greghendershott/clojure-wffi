@@ -11,10 +11,7 @@
 ;;; request and response parsing
 
 (def parse-request (insta/parser
-;; request = junk start-line [head* [body]] junk
-;; start-line = method ws+ path ['?' query+] '\n'
-
-          "
+                    "
 start-line = junk method ws+ path [query] [header* [body]] junk
 
 method = 'GET' | 'PUT' | 'POST' | 'DELETE' | 'OPTIONS'
@@ -51,11 +48,11 @@ query-value = variable | query-value-constant
 query-value-constant = (ALPHA | DIGIT | '-' | '_' | '.')+
 
 header = '\n' (bracketed-header | unbracketed-header)
-bracketed-header = '[' header ']'
+bracketed-header = '[' unbracketed-header ']'
 unbracketed-header = header-key ':' ws* header-value
 
 header-key = (ALPHA | DIGIT | '-' | '_' | '.')+
-header-value = variable | #'[^\n]+'
+header-value = variable | #'[^\n\\]]+'
 
 body = #'\\n{2}.*$'
 
@@ -71,7 +68,8 @@ junk = (ws | '\n')*
        (insta/transform {:query-key str
                          :path-constant str})))
 
-(pprint (parse-request "GET /users/{user}/item/{item}?pqr=0&q={q}&[r=2]"))
+;; (pprint (parse-request "GET /users/{user}/item/{item}?pqr=0&q={q}&[r=2]"))
+
 ;; (pprint
 ;;  (parse-request
 ;;   "
@@ -83,19 +81,14 @@ junk = (ws | '\n')*
 ;; Header: {}
 ;; Header-With-Alias: {alias}
 ;; Header-With-Constant-Value: Constant Value
-;; "))
 ;; [Optional-Header-With-Variable-Value: {}]
 ;; [Optional-Header-With-Constant-Value: 10000]
+;; "))
+
+;;(pprint (parse-request "GET /\n[Header: {Value}]\n"))
 
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-
-(defn split
-  "FIXME: This is the conceptual, inefficient implementation. Should
-  reimplement like Racket's split-at."
-  [pred coll]
-  [(take-while pred coll)
-   (drop-while pred coll)])
 
 (defn gather [pred? coll]
   (loop [result []
@@ -103,7 +96,7 @@ junk = (ws | '\n')*
     (cond (not (seq coll)) result
 
           (pred? (first coll))
-          (let [[ys zs] (split (complement pred?) (rest coll))]
+          (let [[ys zs] (split-with (complement pred?) (rest coll))]
             (recur (concat result
                            (list (list* (first coll) ys)))
                    zs))
