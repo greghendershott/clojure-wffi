@@ -13,7 +13,7 @@
 ;; Note: grammar items like <this> are omitted from the tree.
 (def parse-request (insta/parser
                     "
-start-line = <junk> method <ws>+ path [query] [header* [body]] <junk>
+request = <junk> method <ws>+ path [query] [headers [body]] <junk>
 
 method = 'GET' | 'PUT' | 'POST' | 'DELETE' | 'OPTIONS'
 
@@ -41,17 +41,20 @@ path-constant = path-char*
 
 query = <ws>* <question-mark> (<ws>* query-segment)+
 
-query-segment = query-key <equal-sign> query-value
-              | <ampersand> query-segment
-              | <open-bracket> query-segment <close-bracket>
+query-segment = <ampersand>* (optional-query-segment | required-query-segment)
+optional-query-segment = <open-bracket> query-segment-core <close-bracket>
+required-query-segment = query-segment-core
+query-segment-core = query-key <equal-sign> query-value
+
 query-key = (ALPHA | DIGIT | '-' | '_' | '.')+
 query-value = variable | query-value-constant
 query-value-constant = (ALPHA | DIGIT | '-' | '_' | '.')+
 
-header = <newline> (bracketed-header | unbracketed-header)
+headers = header*
+header = <newline> (optional-header | required-header)
 header-core = header-key <colon> <ws>* header-value
-bracketed-header = <open-bracket> header-core <close-bracket>
-unbracketed-header = header-core
+optional-header = <open-bracket> header-core <close-bracket>
+required-header = header-core
 
 header-key = (ALPHA | DIGIT | '-' | '_' | '.')+
 header-value = variable | header-value-constant
@@ -80,7 +83,12 @@ close-brace = '}'
        (insta/transform {:query-key str
                          :path-constant str
                          :header-key str
+                         ;; "lift" a few nested things
+                         :header identity
                          :header-value identity
+                         :query-segment identity
+                         :query-segment-core (fn [& more] (seq more))
+                         :header-core (fn [& more] (seq more))
                          })))
 
 ;; (pprint (parse-request "GET /users/{user}/item/{item}?pqr=0&q={q}&[r=2]"))
@@ -138,7 +146,7 @@ Entity"))
        str/trim))
 
 (defn body->api-func [body]
-  (let [[intro more] (split #(not= (tagsoup/tag %) :h2) body)
+  (let [[intro more] (split-with #(not= (tagsoup/tag %) :h2) body)
         [[_ _ name] & desc] intro
         m {:name name
            :desc desc
