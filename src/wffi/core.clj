@@ -10,7 +10,11 @@
 
 ;;; request and response parsing
 
-;; Note: grammar items like <this> are omitted from the tree.
+;; Note: Instaparse grammar rules in <angle-brackets> are omitted
+;; from the tree -- i.e. they are intermediate rules that are helpful
+;; for parsing, but usless noise in the produced tree. Some additional
+;; simplification of the tree is done using insta/transform in
+;; `parse-request-transform` below.
 (def parse-request (insta/parser
                     "
 request = <junk> method <ws>+ path [query] [headers [body]] <junk>
