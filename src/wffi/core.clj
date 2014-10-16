@@ -91,6 +91,22 @@ close-brace = '}'
                                     (reduce (fn [m [k & v]] (assoc m k v))
                                             {}
                                             (rest more)))
+                         ;; map-ize query segments
+                         :required-query-segment
+                         (fn [[k [_ v]]]
+                           {:required? true
+                            :key k
+                            :val v})
+                         :optional-query-segment
+                         (fn [[k [_ v]]]
+                           {:required? false
+                            :key k
+                            :val v})
+                         ;; map-ize values and variables
+                         :variable
+                         (fn [x] {:var (if (= x "") nil x)})
+                         :query-value-constant identity
+                         :header-value-constant identity
                          ;; concat some chars to strings
                          :query-key str
                          :path-constant str
@@ -190,29 +206,58 @@ Request entity. Blah blah blah."))
   parameters and their values, and an endpoint for the web service.
   Makes an HTTP request using clj-http."
   [a m endpoint]
-  (let [path (apply str (map (fn [x]
-                               (if (and (seq x) (= (nth x 0) :variable))
-                                 (get m (keyword (nth x 1))) ;;TO-DO: error if nil
-                                 x))
-                             (:path a)))
-        query "" ;;TO-DO
-        heads "" ;;TO-DO
+  (let [paths (map (fn [x]
+                     (if (and (seq x) (= (nth x 0) :variable))
+                       (get m (keyword (nth x 1))) ;;TO-DO: error if nil
+                       x))
+                   (:path a))
+        queries (map (fn [x]
+                       (println x)
+                       (let [k (or (get-in x [:val :var]) (get x :key))
+                             v (get m (keyword k))
+                             ;; v (or v (and (not (map? (:val x))) (:val x)))
+                             ]
+                         (when-not v
+                           (throw (Exception.
+                                   (str "required query parameter `"
+                                        k "' not supplied"))))
+                         (str k "=" v)))
+                     (:query a))
+        heads [] ;;TO-DO
         body  "" ;;TO-DO
         ]
-    (str endpoint path query)))
+    (str (:method a)
+         " "
+         endpoint
+         (apply str paths)
+         (if (seq queries) "?" "")
+         (apply str (interpose "&" queries))
+         (apply str heads))))
 
 (prn
-(do-request {:method "GET"
-             :path ["/"
-                    "user"
-                    "/"
-                    [:variable "user"]
-                    "/"
-                    "items"
-                    "/"
-                    [:variable "item"]]}
-            {:user "Greg" :item "1"}
-            "endpoint"))
+(do-request
+ {:method "GET"
+  :path ["/"
+         "user"
+         "/"
+         [:variable "user"]
+         "/"
+         "items"
+         "/"
+         [:variable "item"]]
+  :query [{:required? true, :key "query-param", :val {:var nil}}
+          {:required? false, :key "optional-query-param", :val {:var nil}}
+          {:required? true, :key "constant-query-param", :val "1"}
+          {:required? true, :key "query-param-with-alias", :val {:var "alias"}}
+          {:required? false, :key "optional-constant-query-param", :val "1"}]}
+ {:user "Greg",
+  :item "1"
+  :query-param "42"
+  :optional-query-param "52",
+  :constant-query-param "62"
+  :alias "72"
+  :optional-constant-query-param "99"}
+ "endpoint"))
 
 
 (defn make-api-map-fn
