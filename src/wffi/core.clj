@@ -57,17 +57,17 @@ query-value-constant = (ALPHA | DIGIT | '-' | '_' | '.')+
 
 headers = header*
 header = <newline> (optional-header | required-header)
-header-core = header-key <colon> <ws>* header-value
+header-core = header-key <colon> <ws>+ header-value
 optional-header = <open-bracket> header-core <close-bracket>
 required-header = header-core
 
 header-key = (ALPHA | DIGIT | '-' | '_' | '.')+
-header-value = variable | header-value-constant
+header-value = header-value-constant | variable
 header-value-constant = #'[^\n\\]]+'
 
 body = #'\\n{2}.*$'
 
-variable = <open-brace> #'[^{}]*' <close-brace>
+variable = <open-brace> #'[^ {}]*' <close-brace>
 
 newline = '\\n'
 colon = ':'
@@ -79,9 +79,10 @@ close-bracket = ']'
 open-brace = '{'
 close-brace = '}'
 
-<ws> = #'\\s'
-<junk> = (ws | '\n')* 
+ws = #'\\s'
+junk = (ws | '\n')*
 "
+                    ;; :start :header
 ))
 
 (defn parse-request-transform [x]
@@ -102,11 +103,15 @@ close-brace = '}'
                            {:required? false
                             :key k
                             :val v})
-                         ;; map-ize values and variables
-                         :variable
-                         (fn [x] {:var (if (= x "") nil x)})
-                         :query-value-constant identity
-                         :header-value-constant identity
+                         ;; map-ize headers
+                         :required-header
+                         (fn [[k v]]
+                           {:required? true, :key k, :val v})
+                         :optional-header
+                         (fn [[k v]]
+                           {:required? false, :key k, :val v})
+                         ;; map-ize variables
+                         :variable (fn [x] {:var (if (= x "") nil x)})
                          ;; concat some chars to strings
                          :query-key str
                          :path-constant str
@@ -117,29 +122,31 @@ close-brace = '}'
                          :query-segment identity
                          :query-segment-core (fn [& more] (seq more))
                          :header-core (fn [& more] (seq more))
+                         :query-value-constant identity
+                         :header-value-constant identity
                          })))
 
 ;; (pprint (parse-request "GET /users/{user}/item/{item}?pqr=0&q={q}&[r=2]"))
 
-(pprint
- (parse-request-transform
-  "
-GET /user/{user}/items/{item}
-    ?query-param={}
-    &[optional-query-param={}]
-    &constant-query-param=1
-    &query-param-with-alias={alias}
-    &[optional-constant-query-param=1]
-Header: {}
-Header-With-Alias: {alias}
-Header-With-Constant-Value: Constant Value
-[Optional-Header-With-Variable-Value: {}]
-[Optional-Header-With-Constant-Value: 10000]
+;; (pprint
+;;  (parse-request-transform
+;;   "
+;; GET /user/{user}/items/{item}
+;;     ?query-param={}
+;;     &[optional-query-param={}]
+;;     &constant-query-param=1
+;;     &query-param-with-alias={alias}
+;;     &[optional-constant-query-param=1]
+;; Header: {}
+;; Header-With-Alias: {alias}
+;; Header-With-Constant-Value: Constant Value
+;; [Optional-Header-With-Variable-Value: {}]
+;; [Optional-Header-With-Constant-Value: 10000]
 
-Request entity. Blah blah blah."))
+;; Request entity. Blah blah blah."))
 
-;;(pprint (parse-request "GET /\n[Header: {Value}]\n"))
-
+;; (pprint (parse-request "GET /foo\nHeader: Value\nHeader: {Value}"))
+;; (pprint (parse-request-transform "GET /foo\nHeader: Value\nHeader: {Value}"))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -212,29 +219,40 @@ Request entity. Blah blah blah."))
                        x))
                    (:path a))
         queries (map (fn [x]
-                       (println x)
+                       ;; If the value is a non-nil variable, use it
+                       ;; as the key, otherwise use the key.
                        (let [k (or (get-in x [:val :var]) (get x :key))
-                             v (get m (keyword k))
-                             ;; v (or v (and (not (map? (:val x))) (:val x)))
-                             ]
+                             v (get m (keyword k))]
                          (when-not v
-                           (throw (Exception.
-                                   (str "required query parameter `"
-                                        k "' not supplied"))))
+                           (throw
+                            (Exception.
+                             (str "required parameter `" k "' not supplied"))))
                          (str k "=" v)))
                      (:query a))
-        heads [] ;;TO-DO
+        heads (map (fn [x]
+                     ;; If the value is a non-nil variable, use it
+                     ;; as the key, otherwise use the key.
+                     (let [k (or (get-in x [:val :var]) (get x :key))
+                           v (get m (keyword k))]
+                       (when-not v
+                         (throw
+                          (Exception.
+                           (str "required parameter `" k "' not supplied"))))
+                       (str k ": " v "\n")))
+                   (:headers a))
         body  "" ;;TO-DO
         ]
     (str (:method a)
          " "
          endpoint
-         (apply str paths)
+         (apply str paths) ;FIXME: url-encoding
          (if (seq queries) "?" "")
-         (apply str (interpose "&" queries))
-         (apply str heads))))
+         (apply str (interpose "&" queries)) ;FIXME: url-encoding
+         "\n"
+         (apply str heads)
+         )))
 
-(prn
+(println
 (do-request
  {:method "GET"
   :path ["/"
@@ -249,16 +267,31 @@ Request entity. Blah blah blah."))
           {:required? false, :key "optional-query-param", :val {:var nil}}
           {:required? true, :key "constant-query-param", :val "1"}
           {:required? true, :key "query-param-with-alias", :val {:var "alias"}}
-          {:required? false, :key "optional-constant-query-param", :val "1"}]}
- {:user "Greg",
+          {:required? false, :key "optional-constant-query-param", :val "1"}]
+  :headers [{:required? true, :key "Header", :val {:var nil}}
+            {:required? true, :key "Header-With-Alias", :val {:var "alias"}}
+            {:required? true,
+             :key "Header-With-Constant-Value",
+             :val "Constant Value"}
+            {:required? false,
+             :key "Optional-Header-With-Variable-Value",
+             :val {:var nil}}
+            {:required? false,
+             :key "Optional-Header-With-Constant-Value",
+             :val "10000"}]}
+ {:user "Greg"
   :item "1"
   :query-param "42"
-  :optional-query-param "52",
+  :optional-query-param "52"
   :constant-query-param "62"
   :alias "72"
-  :optional-constant-query-param "99"}
+  :optional-constant-query-param "99"
+  :Header "10"
+  :Header-With-Alias "20"
+  :Header-With-Constant-Value "30"
+  :Optional-Header-With-Variable-Value "40"
+  :Optional-Header-With-Constant-Value "50"}
  "endpoint"))
-
 
 (defn make-api-map-fn
   "Takes a :request hiccup vector as produced by parse-request, and
