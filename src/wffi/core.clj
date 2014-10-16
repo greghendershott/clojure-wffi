@@ -4,7 +4,8 @@
             [clojure.string :as str]
             [markdown.core :as md]
             [pl.danieljanus.tagsoup :as tagsoup]
-            [instaparse.core :as insta]))
+            [instaparse.core :as insta]
+            [clj-http.client :as client]))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
@@ -80,11 +81,18 @@ close-brace = '}'
 
 <ws> = #'\\s'
 <junk> = (ws | '\n')* 
-"))
+"
+))
 
 (defn parse-request-transform [x]
   (->> (parse-request x)
-       (insta/transform {:query-key str
+       (insta/transform {;; xform top level from hiccup vector to map
+                         :request (fn [& more]
+                                    (reduce (fn [m [k & v]] (assoc m k v))
+                                            {}
+                                            (rest more)))
+                         ;; concat some chars to strings
+                         :query-key str
                          :path-constant str
                          :header-key str
                          ;; "lift" a few nested things
@@ -112,7 +120,7 @@ Header-With-Constant-Value: Constant Value
 [Optional-Header-With-Variable-Value: {}]
 [Optional-Header-With-Constant-Value: 10000]
 
-Entity"))
+Request entity. Blah blah blah."))
 
 ;;(pprint (parse-request "GET /\n[Header: {Value}]\n"))
 
@@ -166,3 +174,52 @@ Entity"))
 
 ;; (def bs (md->bodies "/Users/greg/src/clojure/wffi/src/wffi/example.md"))
 ;; (pprint (map body->api-func bs))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defn map->request
+  "Takes an API request map as produced by parse-request, and a map
+  of parameters and their values.
+
+  Returns a map with keys :method, :path+query, :heads and :data"
+  [v m]
+  nil)
+
+(defn do-request
+  "Takes an API request map as produced by parse-request, a map of
+  parameters and their values, and an endpoint for the web service.
+  Makes an HTTP request using clj-http."
+  [a m endpoint]
+  (let [path (apply str (map (fn [x]
+                               (if (and (seq x) (= (nth x 0) :variable))
+                                 (get m (keyword (nth x 1))) ;;TO-DO: error if nil
+                                 x))
+                             (:path a)))
+        query "" ;;TO-DO
+        heads "" ;;TO-DO
+        body  "" ;;TO-DO
+        ]
+    (str endpoint path query)))
+
+(prn
+(do-request {:method "GET"
+             :path ["/"
+                    "user"
+                    "/"
+                    [:variable "user"]
+                    "/"
+                    "items"
+                    "/"
+                    [:variable "item"]]}
+            {:user "Greg" :item "1"}
+            "endpoint"))
+
+
+(defn make-api-map-fn
+  "Takes a :request hiccup vector as produced by parse-request, and
+  returns a function. The function takes a flat map of parameter names
+  and values."
+  [v endpoint]
+  (fn [m]
+    (do-request v m endpoint)))
+
