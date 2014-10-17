@@ -184,7 +184,9 @@ Request entity. Blah blah blah.")))
                    (:headers a))
         body  ""] ;;TO-DO
     ;; TO-DO: Instead of forming the raw HTTP request bytes here, use
-    ;; clj-http.
+    ;; clj-http. Probably want to use its generic `request` function,
+    ;; since we may have any HTTP method here.
+    client/request
     (str method
          " "
          endpoint
