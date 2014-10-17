@@ -20,7 +20,7 @@
                     "
 request = <junk> method <ws>+ path [query] [headers [body]] <junk>
 
-method = 'GET' | 'PUT' | 'POST' | 'DELETE' | 'OPTIONS'
+method = 'GET' | 'PUT' | 'PATCH' | 'POST' | 'DELETE' | 'OPTIONS'
 
 path = path-segment+
 
