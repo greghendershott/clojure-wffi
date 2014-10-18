@@ -264,43 +264,61 @@ Request entity. Blah blah blah.")))
 
           :else nil))) ;better yet, raise exception
 
-(defn- md->bodies [fname]
-  (let [[_ _ [_ _ & bodies]] ;FIXME: skip :html {}. get contents of [:body {} contents]
-        (-> (md/md-to-html-string (slurp fname))
-            tagsoup/parse-string)]
-    (gather #(= (tagsoup/tag %) :h1) bodies)))
-
-
 (defn- find-h2-and-pre [re coll]
-  (->> coll
-       (drop-while #(not (and (= (nth % 0) :h2)
-                              (re-matches re (nth % 2)))))
-       (drop-while #(not (= (nth % 0) :pre)))
-       first
-       tagsoup/children
-       first
-       str/trim))
+  (let [pre (->> coll
+                 (drop-while #(not (and (= (nth % 0) :h2)
+                                        (re-matches re (nth % 2)))))
+                 (drop-while #(not (= (nth % 0) :pre)))
+                 first
+                 tagsoup/children
+                 first)]
+    (and pre (str/trim pre))))
 
-(defn- body->api-func [endpoint body]
-  (let [[intro more] (split-with #(not= (tagsoup/tag %) :h2) body)
+(defn- section->api-func
+  "Given an endpoint string and a hiccup respresenting an h1
+  section (the h1 and everything up to the following h1) that might
+  describe an API function, return a map for the function or nil. The
+  map's members include a function that can be called to make a
+  request."
+  [endpoint section]
+  (let [[intro more] (split-with #(not= (tagsoup/tag %) :h2) section)
         [[_ _ name] & desc] intro
         request-template (find-h2-and-pre #"Request:?" more)
-        request-map (parse-request request-template)
-        request-func (make-api-fn request-map endpoint)]
-    {:name name
-     :desc desc
-     :request-template request-template ;just for debugging
-     :request-map request-map           ;just for debuggin
-     :request-func request-func
-     :response/raw (find-h2-and-pre #"Response:?" more)}))
+        request-map (and request-template (parse-request request-template))
+        request-func (and request-map (make-api-fn request-map endpoint))]
+    (and request-func
+         {:name name
+          :description desc
+          :request-template request-template ;just for debugging
+          :request-map request-map           ;just for debugging
+          :request-func request-func})))
 
-(def bs (md->bodies "/Users/greg/src/clojure/wffi/src/wffi/example.md"))
-(def apis (map (partial body->api-func "ENDPOINT-TODO")
-               bs))
-;; (pprint apis)
-;; (println)
-;; (println (:request-func (first apis)))
-(println ((:request-func (first apis))
+(defn- find-service-info [section]
+  (let [[[_ _ name] & description] section
+        endpoint (some #(and (= (tagsoup/tag %) :p)
+                             (second (re-matches #"Endpoint: (\S+)"
+                                                 (first (tagsoup/children %)))))
+                       description)]
+    {:name name
+     :description description
+     :endpoint endpoint}))
+
+(defn- parse-md [fname]
+  ;; FIXME? Is the following destructuring let really the best way to
+  ;; skip :html {}, and get contents of [:body {} contents] ?
+  (let [[_ _ [_ _ & bodies]]
+        (-> (md/md-to-html-string (slurp fname))
+            tagsoup/parse-string)
+        h1-sections (gather #(= (tagsoup/tag %) :h1) bodies)
+        service (find-service-info (first h1-sections))
+        endpoint (:endpoint service)
+        apis (filter identity (map (partial body->api-func endpoint)
+                                   h1-sections))]
+    {:service service
+     :apis apis}))
+
+(def p (parse-md "/Users/greg/src/clojure/wffi/src/wffi/example.md"))
+(println ((:request-func (first (:apis p)))
           {:user "joe"
            :item 42
            :qp1 52

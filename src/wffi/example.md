@@ -1,3 +1,14 @@
+# Name of API service
+
+The first h1 section is an introduction to the overall web service.
+
+Also the following line is special; the endpoint for the service:
+
+Endpoint: http://foo/bar
+
+The remaining h1 sections can be used to document and specify each API
+function of the web service.
+
 # Name of API function
 
 The section level 1 heading above is used as the name of the API
