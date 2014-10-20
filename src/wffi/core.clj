@@ -278,7 +278,7 @@ Request entity. Blah blah blah.")))
                  first)]
     (and pre (str/trim pre))))
 
-(defn- section->api-func
+(defn- section->api
   "Given an endpoint string and a hiccup respresenting an h1
   section (the h1 and everything up to the following h1) that might
   describe an API function, return a map for the function or nil. The
@@ -295,7 +295,7 @@ Request entity. Blah blah blah.")))
           :description desc
           :request-template request-template ;just for debugging
           :request-map request-map           ;just for debugging
-          :request-func request-func})))
+          :request-function request-func})))
 
 (defn- find-service-info [section]
   (let [[[_h1 _ name] & more] section
@@ -307,6 +307,9 @@ Request entity. Blah blah blah.")))
      :description more
      :endpoint endpoint}))
 
+(defn- snake-case [s]
+  (-> s str/trim str/lower-case (str/replace " " "-")))
+
 (defn- parse-md [fname]
   ;; FIXME? Is the following destructuring let really the best way to
   ;; skip :html {}, and get contents of [:body {} contents] ?
@@ -315,13 +318,17 @@ Request entity. Blah blah blah.")))
         h1-sections (partition-with #(= (tagsoup/tag %) :h1) bodies)
         service (find-service-info (first h1-sections))
         endpoint (:endpoint service)
-        apis (filter identity (map (partial body->api-func endpoint)
-                                   h1-sections))]
+        apis (filter identity (map (partial section->api endpoint)
+                                   h1-sections))
+        apis (apply hash-map
+                    (mapcat (fn [x]
+                              [(-> :name x snake-case symbol) x])
+                            apis))]
     {:service service
      :apis apis}))
 
 ;; (def p (parse-md "/Users/greg/src/clojure/wffi/src/wffi/example.md"))
-;; (println ((:request-func (first (:apis p)))
+;; (println ((get-in p [:apis 'get :request-function])
 ;;           {:user "joe"
 ;;            :item 42
 ;;            :qp1 52
@@ -330,7 +337,7 @@ Request entity. Blah blah blah.")))
 ;;            :alias "alias-value"}))
 
 (def p (parse-md "/Users/greg/src/webapi-markdown/horseebooks.md"))
-(println ((:request-func (first (:apis p)))
+(println ((get-in p [:apis 'get :request-function])
           {:paragraphs 2}))
 
 ;; TODO: Use a macro to actually `defn` a named function for each of
