@@ -346,18 +346,22 @@ Request entity. Blah blah blah.")))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defmacro defwrappers [file]
+(defmacro defwrappers
+  [file & {:keys [before after]
+           :or {before identity after identity}}]
   (let [service (markdown->service file)
         apis (:apis service)
         service-name (-> (get-in service [:service :name]) snake-case symbol)]
     `(do
-       ;;(ns ~service-name) ;; ????
+       ;; Create a namespace here, to avoid collisions like a web
+       ;; service's "get" and clojure.core/get?
+       ;; (in-ns ~service-name)
        ~@(map (fn [[id {request-function :request-function
                         title :name
                         desc :description}]]
                 `(def ~id
                    ~(str title "\n" desc) ;; TODO hiccup -> ~= markdown
-                   ~request-function))
+                   (comp ~after ~request-function ~before)))
               apis))))
 
 (comment
