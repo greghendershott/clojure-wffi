@@ -7,6 +7,14 @@
             [instaparse.core :as insta]
             [clj-http.client :as client]))
 
+;;; misc
+
+(defn- error
+  "Until I understand the idiomatic way to do this, here's an
+  equivalent of what I would do in Racket (or a Scheme)."
+  [who what]
+  (throw (Exception. (str who ": " what))))
+
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 ;;; request parsing
@@ -146,57 +154,52 @@ Request entity. Blah blah blah.")))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defn- req-param-err [name]
-  (throw
-   (Exception.
-    (str "required parameter `" name "' not supplied"))))
+(defn- throw-missing-param [name]
+  (error 'do-request
+         (str "required parameter `" name "' not supplied")))
 
 (defn- do-request
   "Takes an API request map as produced by parse-request, a map of
   parameters and their values, and an endpoint for the web service.
-  Makes an HTTP request using clj-http."
+  Throws an error if any required parameters are misisng, otherwise
+  makes an HTTP request using clj-http."
   [a m endpoint]
-  (let [[method] (:method a)
+  (let [[method-string] (:method a)
+        method (keyword (str/lower-case method-string))
         paths (map (fn [x]
                      (if-let [k (:var x)]
                        (if-let [v (get m (keyword k))]
                          v
-                         (req-param-err k))
+                         (throw-missing-param k))
                        x))
                    (:path a))
-        queries (map (fn [x]
-                       ;; If value is a non-nil variable, use as the
-                       ;; key (i.e. it's an "alias") else use :key.
-                       (let [k (or (get-in x [:val :var]) (get x :key))
-                             v (get m (keyword k))]
-                         (when-not v
-                           (req-param-err k))
-                         (str k "=" v)))
-                     (:query a))
-        heads (map (fn [x]
-                     ;; If the value is a non-nil variable, use it
-                     ;; as the key, otherwise use the key.
-                     (let [k (or (get-in x [:val :var]) (get x :key))
-                           v (get m (keyword k))]
-                       (when-not v
-                         (req-param-err k))
-                       (str k ": " v "\n")))
-                   (:headers a))
+        queries (apply hash-map
+                       (mapcat (fn [x]
+                                 ;; If value is a non-nil variable, use as the
+                                 ;; key (i.e. it's an "alias") else use :key.
+                                 (let [k (or (get-in x [:val :var]) (get x :key))
+                                       v (get m (keyword k))]
+                                   (when-not v
+                                     (throw-missing-param k))
+                                   [k v]))
+                               (:query a)))
+        heads (apply hash-map
+                     (mapcat (fn [x]
+                               ;; If the value is a non-nil variable, use it
+                               ;; as the key, otherwise use the key.
+                               (let [k (or (get-in x [:val :var]) (get x :key))
+                                     v (get m (keyword k))]
+                                 (when-not v
+                                   (throw-missing-param k))
+                                 [k v]))
+                             (:headers a)))
         body  ""] ;;TO-DO
-    ;; TO-DO: Instead of forming the raw HTTP request bytes here, use
-    ;; clj-http. Probably want to use its generic `request` function,
-    ;; since we may have any HTTP method here.
-    client/request
-    (str method
-         " "
-         endpoint
-         (apply str paths) ;FIXME: url-encoding
-         (if (seq queries) "?" "") ;FIXME: Can nil pun here with `when`?
-         (apply str (interpose "&" queries)) ;FIXME: url-encoding
-         "\n"
-         (apply str heads)
-         "\n"
-         body)))
+    ;; (println method endpoint paths queries heads body)
+    (client/request {:method method
+                     :url (str endpoint (apply str paths))
+                     :query-params queries
+                     :headers heads
+                     })))
 
 ;; Example
 (comment
@@ -251,7 +254,8 @@ Request entity. Blah blah blah.")))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defn- gather [pred? coll]
+(defn- partition-with
+  [pred? coll]
   (loop [result []
          coll coll]
     (cond (not (seq coll)) result
@@ -264,8 +268,8 @@ Request entity. Blah blah blah.")))
 
           :else nil))) ;better yet, raise exception
 
-(defn- find-h2-and-pre [re coll]
-  (let [pre (->> coll
+(defn- find-h2-and-pre [re elements]
+  (let [pre (->> elements
                  (drop-while #(not (and (= (nth % 0) :h2)
                                         (re-matches re (nth % 2)))))
                  (drop-while #(not (= (nth % 0) :pre)))
@@ -294,22 +298,21 @@ Request entity. Blah blah blah.")))
           :request-func request-func})))
 
 (defn- find-service-info [section]
-  (let [[[_ _ name] & description] section
+  (let [[[_h1 _ name] & more] section
         endpoint (some #(and (= (tagsoup/tag %) :p)
                              (second (re-matches #"Endpoint: (\S+)"
                                                  (first (tagsoup/children %)))))
-                       description)]
+                       more)]
     {:name name
-     :description description
+     :description more
      :endpoint endpoint}))
 
 (defn- parse-md [fname]
   ;; FIXME? Is the following destructuring let really the best way to
   ;; skip :html {}, and get contents of [:body {} contents] ?
-  (let [[_ _ [_ _ & bodies]]
-        (-> (md/md-to-html-string (slurp fname))
-            tagsoup/parse-string)
-        h1-sections (gather #(= (tagsoup/tag %) :h1) bodies)
+  (let [[_html _ [_body _ & bodies]] (-> (md/md-to-html-string (slurp fname))
+                                         tagsoup/parse-string)
+        h1-sections (partition-with #(= (tagsoup/tag %) :h1) bodies)
         service (find-service-info (first h1-sections))
         endpoint (:endpoint service)
         apis (filter identity (map (partial body->api-func endpoint)
@@ -317,14 +320,18 @@ Request entity. Blah blah blah.")))
     {:service service
      :apis apis}))
 
-(def p (parse-md "/Users/greg/src/clojure/wffi/src/wffi/example.md"))
+;; (def p (parse-md "/Users/greg/src/clojure/wffi/src/wffi/example.md"))
+;; (println ((:request-func (first (:apis p)))
+;;           {:user "joe"
+;;            :item 42
+;;            :qp1 52
+;;            :qp2 62
+;;            :Header1 10
+;;            :alias "alias-value"}))
+
+(def p (parse-md "/Users/greg/src/webapi-markdown/horseebooks.md"))
 (println ((:request-func (first (:apis p)))
-          {:user "joe"
-           :item 42
-           :qp1 52
-           :qp2 62
-           :Header1 10
-           :alias "alias-value"}))
+          {:paragraphs 2}))
 
 ;; TODO: Use a macro to actually `defn` a named function for each of
 ;; the web API :request-funcs.
