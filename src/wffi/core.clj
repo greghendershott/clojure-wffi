@@ -32,7 +32,7 @@ method = 'GET' | 'PUT' | 'PATCH' | 'POST' | 'DELETE' | 'OPTIONS'
 
 path = path-segment+
 
-<path-segment> = '/' (path-constant | variable)
+<path-segment> = ('/' | '.') (path-constant | variable)
 
 path-constant = path-char*
 
@@ -310,7 +310,7 @@ Request entity. Blah blah blah.")))
 (defn- snake-case [s]
   (-> s str/trim str/lower-case (str/replace " " "-")))
 
-(defn- parse-md [fname]
+(defn markdown->service [fname]
   ;; FIXME? Is the following destructuring let really the best way to
   ;; skip :html {}, and get contents of [:body {} contents] ?
   (let [[_html _ [_body _ & bodies]] (-> (md/md-to-html-string (slurp fname))
@@ -327,7 +327,7 @@ Request entity. Blah blah blah.")))
     {:service service
      :apis apis}))
 
-;; (def p (parse-md "/Users/greg/src/clojure/wffi/src/wffi/example.md"))
+;; (def p (markdown->service "/Users/greg/src/clojure/wffi/src/wffi/example.md"))
 ;; (println ((get-in p [:apis 'get :request-function])
 ;;           {:user "joe"
 ;;            :item 42
@@ -336,9 +336,40 @@ Request entity. Blah blah blah.")))
 ;;            :Header1 10
 ;;            :alias "alias-value"}))
 
-(def p (parse-md "/Users/greg/src/webapi-markdown/horseebooks.md"))
-(println ((get-in p [:apis 'get :request-function])
-          {:paragraphs 2}))
+;; (def p (markdown->service "/Users/greg/src/webapi-markdown/horseebooks.md"))
+;; (println ((get-in p [:apis 'get :request-function])
+;;           {:paragraphs 2}))
 
-;; TODO: Use a macro to actually `defn` a named function for each of
-;; the web API :request-funcs.
+;; (def p (markdown->service "/Users/greg/src/webapi-markdown/imgur.md"))
+;; (println ((get-in p [:apis 'stats :request-function])
+;;           {:view "today"}))
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+(defmacro defwrappers [file]
+  (let [service (markdown->service file)
+        apis (:apis service)
+        service-name (-> (get-in service [:service :name]) snake-case symbol)]
+    `(do
+       ;;(ns ~service-name) ;; ????
+       ~@(map (fn [[id {request-function :request-function
+                        title :name
+                        desc :description}]]
+                `(def ~id
+                   ~(str title "\n" desc) ;; TODO hiccup -> ~= markdown
+                   ~request-function))
+              apis))))
+
+(comment
+  (pprint
+   (macroexpand '(defwrappers "/Users/greg/src/webapi-markdown/horseebooks.md"))))
+
+(comment
+  (pprint
+   (macroexpand '(defwrappers2 "/Users/greg/src/webapi-markdown/imgur.md"))))
+
+
+;; (defwrappers "/Users/greg/src/webapi-markdown/horseebooks.md")
+
+;; (defwrappers "/Users/greg/src/webapi-markdown/imgur.md")
+
