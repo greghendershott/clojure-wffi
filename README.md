@@ -1,14 +1,5 @@
 # wffi
 
-A Clojure library designed to ... well, that part is up to you.
+This is a partial port of the Racket version of [wffi].
 
-## Usage
-
-FIXME
-
-## License
-
-Copyright © 2014 FIXME
-
-Distributed under the Eclipse Public License either version 1.0 or (at
-your option) any later version.
+Disclaimer: This is a warm-up project as I learn Clojure.
