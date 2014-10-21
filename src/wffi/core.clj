@@ -347,6 +347,13 @@ Request entity. Blah blah blah.")))
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
 (defmacro defwrappers
+  "Reads the webapi-markdown file and does a `defn` to wrap each API function.
+
+  The optional `:before` and `:after` keyword arguments allow pre- and
+  post-processing steps for every wrapper function. For example the
+  `:before` function might supply a value for an authentication
+  parameter, and `:after` might be something that uses
+  clj-json.core/parse-string on the response body."
   [file & {:keys [before after]
            :or {before identity after identity}}]
   (let [service (markdown->service file)
@@ -376,4 +383,3 @@ Request entity. Blah blah blah.")))
 ;; (defwrappers "/Users/greg/src/webapi-markdown/horseebooks.md")
 
 ;; (defwrappers "/Users/greg/src/webapi-markdown/imgur.md")
-
