@@ -254,19 +254,17 @@ Request entity. Blah blah blah.")))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defn- partition-with
-  [pred? coll]
-  (loop [result []
-         coll coll]
-    (cond (not (seq coll)) result
-
-          (pred? (first coll))
-          (let [[ys zs] (split-with (complement pred?) (rest coll))]
-            (recur (concat result
-                           (list (list* (first coll) ys)))
-                   zs))
-
-          :else nil))) ;better yet, raise exception
+(defn- gather-by
+  "Like partition-by, except that `f?` is assumed to be a predicate,
+  and, items are partition with runs of one true element combined with
+  false elements."
+  [f? coll]
+  (lazy-seq
+   (when-let [s (seq coll)]
+     (let [fst (first s)
+           fv (f? fst)
+           run (cons fst (take-while (complement f?) (next s)))]
+       (cons run (gather-by f? (seq (drop (count run) s))))))))
 
 (defn- find-h2-and-pre [re elements]
   (let [pre (->> elements
@@ -315,7 +313,7 @@ Request entity. Blah blah blah.")))
   ;; skip :html {}, and get contents of [:body {} contents] ?
   (let [[_html _ [_body _ & bodies]] (-> (md/md-to-html-string (slurp fname))
                                          tagsoup/parse-string)
-        h1-sections (partition-with #(= (tagsoup/tag %) :h1) bodies)
+        h1-sections (gather-by #(= (tagsoup/tag %) :h1) bodies)
         service (find-service-info (first h1-sections))
         endpoint (:endpoint service)
         apis (filter identity (map (partial section->api endpoint)
