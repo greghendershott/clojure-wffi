@@ -24,8 +24,8 @@
 ;; for parsing, but usless noise in the produced tree. Some additional
 ;; simplification of the parse output is done using insta/transform in
 ;; `simplify-parsed-request` below.
-(def raw-parse-request (insta/parser
-                    "
+(def raw-parse-request (insta/parser "
+
 request = <junk> method <ws>+ path [query] [headers [body]] <junk>
 
 method = 'GET' | 'PUT' | 'PATCH' | 'POST' | 'DELETE' | 'OPTIONS'
@@ -256,8 +256,8 @@ Request entity. Blah blah blah.")))
 
 (defn- gather-by
   "Like partition-by, except that `f?` is assumed to be a predicate,
-  and, items are partition with runs of one true element combined with
-  false elements."
+  and, items are partitioned with one true element combined with a
+  run of false elements."
   [f? coll]
   (lazy-seq
    (when-let [s (seq coll)]
@@ -325,26 +325,13 @@ Request entity. Blah blah blah.")))
     {:service service
      :apis apis}))
 
-;; (def p (markdown->service "/Users/greg/src/clojure/wffi/src/wffi/example.md"))
-;; (println ((get-in p [:apis 'get :request-function])
-;;           {:user "joe"
-;;            :item 42
-;;            :qp1 52
-;;            :qp2 62
-;;            :Header1 10
-;;            :alias "alias-value"}))
-
-;; (def p (markdown->service "/Users/greg/src/webapi-markdown/horseebooks.md"))
-;; (println ((get-in p [:apis 'get :request-function])
-;;           {:paragraphs 2}))
-
 ;; (def p (markdown->service "/Users/greg/src/webapi-markdown/imgur.md"))
 ;; (println ((get-in p [:apis 'stats :request-function])
 ;;           {:view "today"}))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(defmacro defwrappers
+(defmacro wffi-require
   "Reads the webapi-markdown file and does a `defn` to wrap each API function.
 
   The optional `:before` and `:after` keyword arguments allow pre- and
@@ -371,13 +358,29 @@ Request entity. Blah blah blah.")))
 
 (comment
   (pprint
-   (macroexpand '(defwrappers "/Users/greg/src/webapi-markdown/horseebooks.md"))))
+   (macroexpand '(wffi-require "/Users/greg/src/webapi-markdown/horseebooks.md"))))
+
+;; (wffi-require "/Users/greg/src/webapi-markdown/horseebooks.md")
+;; (wffi-require "/Users/greg/src/webapi-markdown/imgur.md")
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; Example usage 1: At runtime.
 
 (comment
-  (pprint
-   (macroexpand '(defwrappers2 "/Users/greg/src/webapi-markdown/imgur.md"))))
+  (def p (markdown->service "/Users/greg/src/webapi-markdown/horseebooks.md"))
+  (pprint p)
+  (def f (get-in p [:apis 'get-text :request-function]))
+  (pprint (f {:paragraphs 2})))
 
+;; Example usage 2: At compile time.
+;;
+;; 1. The work of parsing the file and making the wrapper function is
+;; shifted to compile time, via a macro: `wffi-require`.
+;;
+;; 2. `wffi-require` is like normal `require`: Named functions are
+;; automatically defined and available to use.
 
-;; (defwrappers "/Users/greg/src/webapi-markdown/horseebooks.md")
-
-;; (defwrappers "/Users/greg/src/webapi-markdown/imgur.md")
+(comment
+  (wffi-require "/Users/greg/src/webapi-markdown/horseebooks.md")
+  (pprint (get-text {:paragraphs 2})))
