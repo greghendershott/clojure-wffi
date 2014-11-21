@@ -305,7 +305,7 @@ Request entity. Blah blah blah.")))
      :description more
      :endpoint endpoint}))
 
-(defn- snake-case [s]
+(defn- kebab-case [s]
   (-> s str/trim str/lower-case (str/replace " " "-")))
 
 (defn markdown->service [fname]
@@ -320,7 +320,7 @@ Request entity. Blah blah blah.")))
                                    h1-sections))
         apis (apply hash-map
                     (mapcat (fn [x]
-                              [(-> :name x snake-case symbol) x])
+                              [(-> :name x kebab-case symbol) x])
                             apis))]
     {:service service
      :apis apis}))
@@ -343,7 +343,7 @@ Request entity. Blah blah blah.")))
            :or {before identity after identity}}]
   (let [service (markdown->service file)
         apis (:apis service)
-        service-name (-> (get-in service [:service :name]) snake-case symbol)]
+        service-name (-> (get-in service [:service :name]) kebab-case symbol)]
     `(do
        ;; Create a namespace here, to avoid collisions like a web
        ;; service's "get" and clojure.core/get?
